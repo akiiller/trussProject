@@ -8,33 +8,34 @@ from scipy.optimize import brentq
 def definir_geometria():
     """
     Define a geometria da treliça: coordenadas dos nós, conectividade das barras e áreas.
+    Esta versão foi projetada com 18 barras para um grupo de 4 integrantes.
     A estrutura deve vencer um vão de 1m, com altura máxima de 0.5m.
     Nós obrigatórios: A(0,0), B(1,0) e C(0.5,0).
     """
-    # Coordenadas dos nós [x, y] em metros
+    # Coordenadas dos nós [x, y] em metros (10 nós no total)
     nodes = np.array([
         [0.0, 0.0],  # Nó 0 (Apoio A)
         [0.25, 0.0],  # Nó 1
-        [0.5, 0.0],  # Nó 2
-        [0.75, 0.0],  # Nó 3 (Carga C)
-        [1.0, 0.0],  # Nó  4
-        [1.25, 0.0], # Nó  5
-         [1.5, 0.0],# Nó 6 (Apoio B)
-        [0.25, 0.25],  # Nó 7
-        [0.5, 0.25],  # Nó 8
-        [0.75, 0.25],  # Nó 9
-        [1.0, 0.25], # Nó 10
-         [1.25, 0.25] # Nó 11
+        [0.5, 0.0],  # Nó 2 (Carga C)
+        [0.75, 0.0],  # Nó 3
+        [1.0, 0.0],  # Nó 4 (Apoio B)
+        [0.125, 0.25],  # Nó 5
+        [0.375, 0.25],  # Nó 6
+        [0.625, 0.25],  # Nó 7
+        [0.875, 0.25],  # Nó 8
+        [0.5, 0.4]  # Nó 9 (Pico da estrutura)
     ])
 
-    # Conectividade das barras [nó_i, nó_j]
-    # Mínimo de 18 barras para 8 integrante (10 + 2*1)
+    # Conectividade das barras [nó_i, nó_j] (18 barras no total)
     bars = np.array([
-        [0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 6],  # Banzos inferiores
-        [7, 8], [8, 9],[9, 10], [ 10, 11], # Banzos superiores
-        [0, 7], [1, 7], [2, 7], [2,8], # Diagonais e montantes esquerdos
-        [2, 9], [3, 9], [4, 9],  # Diagonais e montantes centrais e direitos
-        [4, 10] ,[4, 11] , [5, 11] ,[6, 11] ,  # Montante direito
+        # Banzos (vigas) inferiores (4 barras)
+        [0, 1], [1, 2], [2, 3], [3, 4],
+        # Banzos superiores (5 barras)
+        [5, 6], [6, 9], [9, 7], [7, 8], [6, 7],
+        # Montantes (verticais) (5 barras)
+        [0, 5], [1, 6], [2, 9], [3, 7], [4, 8],
+        # Diagonais (4 barras)
+        [1, 5], [2, 6], [2, 7], [3, 8]
     ])
 
     # Áreas da seção transversal (A) de cada barra em m²
@@ -48,10 +49,10 @@ def definir_geometria():
 
 # Nós de apoio A e B
 NO_APOIO_A = 0
-NO_APOIO_B = 6
+NO_APOIO_B = 4
 
 # Nó de aplicação da carga e valor de teste
-NO_CARGA = 3
+NO_CARGA = 2
 CARGA_TESTE_KGF = 1.0  # 1.0 kgf para teste inicial
 
 # --- Parâmetros do Material (Espaguete) ---
@@ -123,7 +124,7 @@ def plotar_estrutura(nodes, bars, no_apoio_A, no_apoio_B, no_carga, carga_aplica
 def calcular_modulo_elasticidade(caminho_arquivo):
     """
     Calcula o Módulo de Elasticidade (E) por regressão linear de dados
-    de um ensaio de tração lidos do arquivo 'dados.txt'.
+    de um ensaio de tração lidos de um arquivo.
     Tensão = E * Deformação
     """
     try:
@@ -166,35 +167,27 @@ def solucao_estrutural_e_capacidade(F_aplicada, nodes, bars, areas, E, no_carga,
         L = comprimentos[i]
         A = areas[i, 0]
 
-        # Cossenos diretores
         dx = nodes[n2, 0] - nodes[n1, 0]
         dy = nodes[n2, 1] - nodes[n1, 1]
         c, s = dx / L, dy / L
 
-        # Matriz de rigidez local em coordenadas globais
         k_local = (A * E / L) * np.array([
-            [c * c, c * s, -c * c, -c * s],
-            [c * s, s * s, -c * s, -s * s],
-            [-c * c, -c * s, c * c, c * s],
-            [-c * s, -s * s, c * s, s * s]
+            [c * c, c * s, -c * c, -c * s], [c * s, s * s, -c * s, -s * s],
+            [-c * c, -c * s, c * c, c * s], [-c * s, -s * s, c * s, s * s]
         ])
 
-        # Montagem na matriz global
         indices = np.array([2 * n1, 2 * n1 + 1, 2 * n2, 2 * n2 + 1])
         K[np.ix_(indices, indices)] += k_local
 
-    # Vetor de forças F
     F_vetor = np.zeros(2 * num_nodes)
-    F_vetor[2 * no_carga + 1] = -F_aplicada  # Carga vertical para baixo
+    F_vetor[2 * no_carga + 1] = -F_aplicada
 
-    # Aplicação das condições de contorno (apoios)
-    apoios_gdl = [2 * no_apoio_A, 2 * no_apoio_A + 1, 2 * no_apoio_B + 1]  # Apoio fixo em A, móvel em B
+    apoios_gdl = [2 * no_apoio_A, 2 * no_apoio_A + 1, 2 * no_apoio_B + 1]
     gdl_livres = np.setdiff1d(range(2 * num_nodes), apoios_gdl)
 
     K_reduzida = K[np.ix_(gdl_livres, gdl_livres)]
     F_reduzido = F_vetor[gdl_livres]
 
-    # Resolução para os deslocamentos
     try:
         u_reduzido = np.linalg.solve(K_reduzida, F_reduzido)
     except np.linalg.LinAlgError:
@@ -203,27 +196,20 @@ def solucao_estrutural_e_capacidade(F_aplicada, nodes, bars, areas, E, no_carga,
     u = np.zeros(2 * num_nodes)
     u[gdl_livres] = u_reduzido
 
-    # Cálculo das forças internas (Fi) em cada barra
     forcas_internas = np.zeros(num_bars)
     for i in range(num_bars):
         n1, n2 = bars[i]
-        L = comprimentos[i]
-        A = areas[i, 0]
-        dx = nodes[n2, 0] - nodes[n1, 0]
-        dy = nodes[n2, 1] - nodes[n1, 1]
+        L, A = comprimentos[i], areas[i, 0]
+        dx, dy = nodes[n2, 0] - nodes[n1, 0], nodes[n2, 1] - nodes[n1, 1]
         c, s = dx / L, dy / L
 
         u_local = np.array([u[2 * n1], u[2 * n1 + 1], u[2 * n2], u[2 * n2 + 1]])
         deformacao_axial = (1 / L) * np.dot(np.array([-c, -s, c, s]), u_local)
         forcas_internas[i] = A * E * deformacao_axial
 
-        # Cálculo da Capacidade Resistiva (Cr)
     Ri = np.zeros(num_bars)
     for i in range(num_bars):
-        Fi = forcas_internas[i]
-        Ai = areas[i, 0]
-        L = comprimentos[i]
-
+        Fi, Ai, L = forcas_internas[i], areas[i, 0], comprimentos[i]
         I = Ai ** 2 / (4 * np.pi)
 
         if Fi >= 0:  # Tração
@@ -260,20 +246,13 @@ def encontrar_carga_colapso(nodes, bars, areas, E, no_carga, no_apoio_A, no_apoi
 # --- 10. Execução Principal e Apresentação dos Resultados ---
 
 if __name__ == "__main__":
-    # 1. Geometria
     nodes, bars, areas = definir_geometria()
     altura_max = np.max(nodes[:, 1])
 
-    # 4. Peso
     massa, peso_N = calcular_peso(nodes, bars, areas)
-
-    # 6. Módulo de Elasticidade com base no arquivo de dados
     E = calcular_modulo_elasticidade(ARQUIVO_DADOS)
-
-    # 9. Carga de Colapso
     carga_de_colapso = encontrar_carga_colapso(nodes, bars, areas, E, NO_CARGA, NO_APOIO_A, NO_APOIO_B, TENSAO_LIMITE)
 
-    # 10. Resultados Finais
     print("-------------------------------------------------")
     print("      M E M O R I A L   D E   C Á L C U L O      ")
     print("-------------------------------------------------")
@@ -283,7 +262,7 @@ if __name__ == "__main__":
     print(f"Tensão limite do material (σl): {TENSAO_LIMITE / 1e6:.2f} x 10^6 kgf/m²")
     print("-------------------------------------------------")
     print(f"Altura máxima da estrutura:     {altura_max:.2f} m")
-    print(f"Massa da estrutura:             {massa:.3f} kg (Limite: 0.75 kg)")
+    print(f"Massa da estrutura:             {massa:.3f} kg (Limite: 0.75 kg) ")
     print(f"Número de barras:               {len(bars)}")
     print(f"Número de nós:                  {len(nodes)}")
     print("-------------------------------------------------")
@@ -293,9 +272,8 @@ if __name__ == "__main__":
         print("CARGA DE COLAPSO:               Não foi possível calcular. Verifique o intervalo de busca ou os dados.")
     print("-------------------------------------------------")
 
-    # 5. Plotagem Final
     if carga_de_colapso is not None:
-        plot_title = f'Estrutura da Ponte de Espaguete\nCarga de Colapso: {carga_de_colapso:.2f} kgf'
+        plot_title = f'Estrutura da Ponte (18 Barras)\nCarga de Colapso: {carga_de_colapso:.2f} kgf'
         plotar_estrutura(nodes, bars, NO_APOIO_A, NO_APOIO_B, NO_CARGA, carga_de_colapso, plot_title)
     else:
         plotar_estrutura(nodes, bars, NO_APOIO_A, NO_APOIO_B, NO_CARGA, 0,
